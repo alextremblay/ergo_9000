@@ -1,0 +1,12 @@
+kmk_firmware
+circuitpython
+kle.json
+kle_to_keymap.py
+firmware.uf2
+pyproject.toml
+.rsyncignore
+.gitignore
+.git
+.venv
+.vscode
+requirements*

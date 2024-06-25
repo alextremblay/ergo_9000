@@ -1,0 +1,6 @@
+kmk_firmware
+circuitpython
+lib
+kle.json
+keymap.py
+.venv

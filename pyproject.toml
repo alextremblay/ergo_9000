@@ -1,0 +1,48 @@
+[project]
+name = "kmk-firmware"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+]
+dependencies = []
+readme = "README.md"
+requires-python = ">= 3.10"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+managed = true
+dev-dependencies = [
+    "requests",
+    "pyocd>=0.36.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.black]
+# since black refuses to allow single-quotes...  see locked conversation at
+# https://github.com/psf/black/issues/594
+skip-string-normalization = true
+target = "py310"
+# explicitly exclude user_keymaps from black formatting rules
+# because a visually-appealing keymap list will be flattened
+# by black into a much harder to understand format
+exclude = '''
+/(
+    \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | \.pytest_cache
+  | \.compiled
+  | dist
+  | boards
+  | build
+  | docs
+  | user_keymaps
+  | mnt
+)/
+'''
