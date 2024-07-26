@@ -127,13 +127,8 @@ class Display(Extension):
 
     
     def dim(self):
-        "Dim the display after 20s, turn it off after 60s"
+        "Dim the display after 20s"
         if (
-            ticks_diff(ticks_ms(), self.timer_start) > 60_000
-        ):
-            self.display.sleep()
-
-        elif (
             ticks_diff(ticks_ms(), self.timer_start) > 20_000
         ):
             self.display.brightness = 0.1

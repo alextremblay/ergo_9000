@@ -116,7 +116,7 @@ layers = {
 }
         
 
-def map_key(lkey, layer, index):
+def map_key(lkey, layer, index, extra_info):
     """Map each key string from KLE into a valid KC keycode"""
     _row_offset = index % row_width
     if _row_offset <= (row_width / 2):
@@ -138,6 +138,11 @@ def map_key(lkey, layer, index):
         case "Dbg":
             return "DEBUG"
         case "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "0":
+            # the only difference in kle between numpad and regular numbers is that
+            # numpad numbers are in the first 3 columns of a given row, and regular
+            # numbers are not
+            if 'numpad' in extra_info:
+                return f"KP_{lkey}"
             return f"N{lkey}"
         case "Ctrl" | "Control" | "⌃" | "^":
             return f"{side}CTL"
@@ -160,6 +165,8 @@ def map_key(lkey, layer, index):
         case "Del" | "⌦":
             return "DEL"
         case "Enter" | "⏎" | "↩":
+            if 'numpad' in extra_info:
+                return 'PENT' # KP_ENTER
             return "ENTER"
         case "Esc" | "⎋":
             return "ESC"
@@ -182,8 +189,12 @@ def map_key(lkey, layer, index):
         case "Down" | "↓" | "⇣":
             return "DOWN"
         case "-":
+            if 'numpad' in extra_info:
+                return "PMNS" # KP_MINUS
             return "MINS"
         case "=":
+            if 'numpad' in extra_info:
+                return "PEQL" # KP_EQUAL
             return "EQL"
         case "[":
             return "LBRC"
@@ -198,16 +209,19 @@ def map_key(lkey, layer, index):
         case ",":
             return "COMM"
         case ".":
+            if 'numpad' in extra_info:
+                return "PDOT" # KP_DOT
             return "DOT"
         case "`":
             return "GRV"
         case "/":
+            if 'numpad' in extra_info:
+                return "PSLS" # KP_SLASH
             return "SLSH"
         case "PrtSc":
             return "PSCR"
         case "Reset":
             return "RST"
-        # TODO: handle numpad keys... how would i even mark these in KLE?
         # ANSI Shifted Symbols
         case "~":
             return "TILD"
@@ -226,6 +240,8 @@ def map_key(lkey, layer, index):
         case "&":
             return "AMPR"
         case "*":
+            if 'numpad' in extra_info:
+                return "PAST" # KP_ASTERISK
             return "ASTR"
         case "(":
             return "LPRN"
@@ -234,6 +250,8 @@ def map_key(lkey, layer, index):
         case "_":
             return "UNDS"
         case "+":
+            if 'numpad' in extra_info:
+                return "PPLS" # KP_PLUS
             return "PLUS"
         case "{":
             return "LCBR"
@@ -253,11 +271,11 @@ def map_key(lkey, layer, index):
             return "QUES"
 
         # Media Keys
-        case "Mute" | "🔇":
+        case "Mute" | "🔇" | "":
             return "MUTE"
-        case "Vol-" | "🔉":
+        case "Vol-" | "🔉" | "":
             return "VOLD"
-        case "Vol+" | "🔊":
+        case "Vol+" | "🔊" | "":
             return "VOLU"
         case "Play" | "▶" | "⏯":
             return "MPLY"
@@ -278,15 +296,21 @@ def map_key(lkey, layer, index):
         case "🔆":
             return "BRIU"
         case "Workspace Next" | "⇸": 
-            return 
+            return "WSP_NXT"
         case "Workspace Prev" | "⇷":
-            return
+            return "WSP_PRV"
         case "Display Next" | "⇻":
-            return
+            return "DSP_NXT"
         case "Display Prev" | "⇺":
-            return
-        case "Mission Control" | "":
-            return
+            return "DSP_PRV"
+        case "Mission Control" | "⑆":
+            return "MSN_CTL"
+        case "Cut" | "":
+            return "CUT"
+        case "Copy" | "":
+            return "COPY"
+        case "Paste" | "":
+            return "PASTE"
         case _:
             # as a fallback, and KMK keycode can be specficied directly
             return lkey.upper()
@@ -295,7 +319,8 @@ def map_key(lkey, layer, index):
 for index, labels in enumerate(keys):
     for layer in layer_map:
         key = labels[layer_map[layer]]
-        key = map_key(key, layer, index)
+        extra_info = labels[11]
+        key = map_key(key, layer, index, extra_info=extra_info)
         layers[layer].append(key)
 
 # Now we render this data into a keymap.py file
@@ -310,6 +335,8 @@ for layer in layers:
             layers_s += "            "
         if key == "TRNS":
             layers_s += "___,      "
+        elif key in ["WSP_NXT", "WSP_PRV", "DSP_NXT", "DSP_PRV", "MSN_CTL"]:
+            layers_s += "{:10}".format(f"{key}, ")
         else:
             layers_s += "{:10}".format(f"KC.{key}, ")
         if _row_offset == row_width-1:
@@ -320,6 +347,11 @@ from kmk.keys import KC
 
 def get_keymap():
     ___ = KC.TRNS
+    WSP_NXT = KC.HYPR(KC.RIGHT)
+    WSP_PRV = KC.HYPR(KC.LEFT)
+    DSP_NXT = KC.MEH(KC.RIGHT)
+    DSP_PRV = KC.MEH(KC.LEFT)
+    MSN_CTL = KC.HYPR(KC.UP)
     return [
         # fmt: off
         {layers_s}
