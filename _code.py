@@ -35,5 +35,17 @@ text = "Hello World!"
 text_area = label.Label(terminalio.FONT, text=text, color=0xFFFF00, x=28, y=15)
 splash.append(text_area)
 
-while True:
-    pass
+
+from kb import Ergo9000
+k = Ergo9000()
+k.debug_enabled = True
+k._init()
+from display import *
+self = k.display
+rg = self.root_group
+layer_group = rg[0]
+mods_group = rg[1][0]
+debug_group = rg[1][1]
+os_group = rg[1][2]
+boot_mode_group = rg[1][3]
+msg_group = rg[2]

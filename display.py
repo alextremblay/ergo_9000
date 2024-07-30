@@ -6,7 +6,6 @@ from supervisor import ticks_ms
 from typing import TYPE_CHECKING
 from terminalio import FONT
 from adafruit_display_text.label import Label
-from kmk.extensions.display import Display as Base
 from displayio import I2CDisplay
 from adafruit_displayio_ssd1306 import SSD1306
 from kmk.kmktime import ticks_diff, PeriodicTimer
@@ -57,7 +56,7 @@ class Display(Extension):
     def __init__(self, kb: 'Ergo9000'):
         displayio.release_displays()
         display_bus = I2CDisplay(board.I2C(), device_address=0x3C)
-        self.display = SSD1306(display_bus, width=128, height=64)
+        self.driver = SSD1306(display_bus, width=128, height=64)
         self.kb = kb
         self.prev_layer = 0
         self.should_render = False
@@ -79,11 +78,47 @@ class Display(Extension):
         self.timer_start = ticks_ms()
         self.powersave = False
         self.dim_period = PeriodicTimer(50)
+        self.root_group = None
+        self.root_group = displayio.Group()
+        self.layer_group = displayio.Group()
+        self.root_group.append(self.layer_group)
+        # Layer text width incl padding is 18 chars
+        self.render_boxed_text(self.layer_group, "Bootup", width=128, border=4, padding=4)
+        row_2 = displayio.Group(y=27)
+        self.mods_group = displayio.Group()
+        row_2.append(self.mods_group)
+        self.render_boxed_glyphs(self.mods_group, [glyphs.ctrl, glyphs.alt, glyphs.shift, glyphs.gui], border=2, padding=2)
+        self.debug_group = displayio.Group(x=52)
+        row_2.append(self.debug_group)
+        self.render_boxed_glyphs(self.debug_group, [glyphs.con], border=2, padding=2)
+        self.os_group = displayio.Group(x=68)
+        row_2.append(self.os_group)
+        self.render_boxed_glyphs(self.os_group, [glyphs.mac], border=2, padding=2)
+        self.boot_mode_group = displayio.Group(x=84)
+        row_2.append(self.boot_mode_group)
+        self.render_boxed_text(self.boot_mode_group, self.boot_mode, width=44, border=2, padding=2)
+        self.root_group.append(row_2)
+        self.msg_group = displayio.Group(y=44)
+        self.root_group.append(self.msg_group)
+        self.render_boxed_text(self.msg_group, self.msg, width=128, border=2, padding=2)
+
+    def update(self, active_layer):
+        "Update the display"
+        self.layer_group[-1].text = self.layer_text(active_layer)
+        self.mods_group[2].hidden = not self.mods.ctrl
+        self.mods_group[3].hidden = not self.mods.alt
+        self.mods_group[4].hidden = not self.mods.shift
+        self.mods_group[5].hidden = not self.mods.gui
+        self.debug_group[-1].hidden = not self.kb.debug_enabled
+        self.os_group[-1][0] = glyphs.mac if self.kb.mac_mode else glyphs.win
+        self.msg_group[-1].text = self.msg
+        self.driver.show(self.root_group)
 
     # region Extension methods
 
     def during_bootup(self, keyboard):
-        self.render(0)
+        self.driver.show(self.root_group)
+
 
     def on_runtime_enable(self, keyboard):
         pass
@@ -102,16 +137,13 @@ class Display(Extension):
         # We don't want to render after every matrix scan, as that would produce significant lag
         if active_layer != self.prev_layer:
             self.prev_layer = active_layer
-            self.should_render = True
-        if self.should_render:
-            self.render(active_layer)
-            self.should_render = False
+            self.update(active_layer)
         else:
             # the above logic *should* capture all instances where we need to render
             # but just in case, we'll render every half second
-            if ticks_ms() - self.fallback_timer > 500:
+            if ticks_ms() - self.fallback_timer > 100:
                 self.fallback_timer = ticks_ms()
-                self.render(active_layer)
+                self.update(active_layer)
 
     def before_hid_send(self, keyboard):
         pass
@@ -131,11 +163,11 @@ class Display(Extension):
         if (
             ticks_diff(ticks_ms(), self.timer_start) > 20_000
         ):
-            self.display.brightness = 0.1
+            self.driver.brightness = 0.1
 
         else:
-            self.display.brightness = 0.8
-            self.display.wake()
+            self.driver.brightness = 0.8
+            self.driver.wake()
 
 
     # endregion
@@ -147,17 +179,10 @@ class Display(Extension):
 
         # for some reason, passing this SPECIFIC group to self.display.show() silently fails
         # it doesn't crash, it just does nothing -\_(o_o)_/-
-        # assinging it to self.display.root_group works though
-        self.display.root_group = repl_view
-        self.display.show(repl_view)
+        # assinging it to self.driver.root_group works though
+        self.driver.root_group = repl_view
+        self.driver.show(repl_view)
 
-    def render(self, active_layer):
-        "Render the display"
-        group = displayio.Group()
-        _, y = self.render_layer(group, active_layer)
-        _, y = self.render_icon_bar(group, y=y)
-        self.render_msg(group, y=y)
-        self.display.show(group)
 
     def render_box(self, group: displayio.Group, x: int, y: int, width: int, height: int, border: int = 1):
         white_box = vectorio.Rectangle(
@@ -177,8 +202,8 @@ class Display(Extension):
         self,
         group: displayio.Group,
         text: str,
-        x: int,
-        y: int,
+        x: int = 0,
+        y: int = 0,
         width: int = None,  # type: ignore
         border: int = 1,
         padding: int = 1,
@@ -204,30 +229,26 @@ class Display(Extension):
         )
         group.append(text_area)
 
-        new_x = x + width
-        new_y = y + height
-        return new_x, new_y
+        width = x + width
+        height = y + height
+        return width, height
     
-    def render_boxed_glyphs(self, group: displayio.Group, glyph_ids: list[int], x: int, y: int, border: int = 1, padding: int = 1):
+    def render_boxed_glyphs(self, group: displayio.Group, glyph_ids: list[int], border: int = 1, padding: int = 1):
         "Render a box with glyphs in it, returning the x or y coordinates of the next box"
-        box = displayio.Group(x=x, y=y)
         glyph_height = 12
         width = (len(glyph_ids) * 12) + (padding * 2) + (border * 2)
         height = glyph_height + (padding * 2) + (border * 2)
         
-        self.render_box(box, 0, 0, width, height, border)
+        self.render_box(group, 0, 0, width, height, border)
         offset = border + padding
         for _id in glyph_ids:
-            glyph = glyphs.get_glyph(_id, x=offset, y=y + border + padding)
+            glyph = glyphs.get_glyph(_id, x=offset, y=border + padding)
             offset += 12
-            box.append(glyph)
+            group.append(glyph)
 
-        new_x = x + width
-        new_y = y + height
-        group.append(box)
-        return new_x, new_y
+        return width, height
         
-    def render_layer(self, group: displayio.Group, active_layer):
+    def layer_text(self, active_layer):
         "Render the layer name"
         layer_map = {
             0: 'Base',
@@ -236,76 +257,79 @@ class Display(Extension):
             3: 'Adjust',
         }
         layer_name = layer_map.get(active_layer, 'Unknown')
-        return self.render_boxed_text(
-            group, layer_name, 0, 0, width=128, border=4, padding=4
-        )
+        return f"{layer_name:^18}"
 
-    def render_icon_bar(self, group: displayio.Group, x: int = 0, y: int = 32):
-        "render a series of icons for the current mods and boot mode"
-        # draw a row of boxes for all the different status icons
-        icon_bar = displayio.Group(x=x, y=y)
-        x, _ = self.render_boxed_glyphs(icon_bar, [self.ctrl, self.alt, self.shift, self.gui], x, 0)
-        for icon in [self.debug, self.os_mode]:
-            x, _ = self.render_boxed_glyphs(icon_bar, [icon], x, y=0)
-
-        # draw the boot mode
-        remaining_width = 128 - x
-        x, y_offset = self.render_boxed_text(
-            icon_bar, self.boot_mode, x, 0, width=remaining_width
-        )
-        group.append(icon_bar)
-        return x, y+y_offset
-
-    def render_msg(self, group: displayio.Group, x: int = 0, y: int = 32):
-        "Render the status msg"
-        return self.render_boxed_text(group, self.msg, x, y, width=128)
 
     # region Mod handling
 
     @property
     def ctrl(self):
-        return glyphs.ctrl if self.mods.ctrl else glyphs.blank
+        return not self.mods_group[2].hidden
+    
+    @ctrl.setter
+    def ctrl(self, value):
+        self.mods.ctrl = value
+        self.mods_group[2].hidden = not value
 
     @property
     def alt(self):
-        return glyphs.alt if self.mods.alt else glyphs.blank
+        return not self.mods_group[3].hidden
+    
+    @alt.setter
+    def alt(self, value):
+        self.mods.alt = value
+        self.mods_group[3].hidden = not value
 
     @property
     def shift(self):
-        return glyphs.shift if self.mods.shift else glyphs.blank
+        return not self.mods_group[4].hidden
+    
+    @shift.setter
+    def shift(self, value):
+        self.mods.shift = value
+        self.mods_group[4].hidden = not value
 
     @property
     def gui(self):
+        return not self.mods_group[5].hidden
+    
+    @gui.setter
+    def gui(self, value):
+        self.mods.gui = value
         # glyphs.gui is the mac command symbol, glyphs.win is the windows key
-        if self.mods.gui:
-            return glyphs.gui if self.mac_mode else glyphs.win
-        else:
-            return glyphs.blank
+        self.mods_group[5][0] = glyphs.gui if self.mac_mode else glyphs.win
+        self.mods_group[5].hidden = not value
 
     @property
     def debug(self):
-        return glyphs.con if self.kb.debug_enabled else glyphs.blank
+        return not self.debug_group[-1].hidden
+    
+    @debug.setter
+    def debug(self, value):
+        self.debug_group[-1].hidden = not value
 
     @property
     def os_mode(self):
-        return glyphs.mac if self.kb.mac_mode else glyphs.win
+        return not self.os_group[-1].hidden
+    
+    @os_mode.setter
+    def os_mode(self, value):
+        self.os_group[-1][0] = glyphs.mac if value else glyphs.win
 
     def handle_mods(self, key: Key, keyboard: 'Ergo9000', pressed: bool, *args):
         "Update the mods display"
         if key in [KC.LSFT, KC.RSFT]:
-            self.mods.shift = pressed
+            self.shift = pressed
         elif key in [KC.LCTL, KC.RCTL]:
-            self.mods.ctrl = pressed
+            self.ctrl = pressed
         elif key in [KC.LALT, KC.RALT]:
-            self.mods.alt = pressed
+            self.alt = pressed
         elif key in [KC.LGUI, KC.RGUI]:
-            self.mods.gui = pressed
+            self.gui = pressed
         elif key == KC.MEH:
-            self.mods.shift = self.mods.ctrl = self.mods.alt = pressed
+            self.shift = self.ctrl = self.alt = pressed
         elif key == KC.HYPR:
-            self.mods.shift = self.mods.ctrl = self.mods.alt = self.mods.gui = pressed
-
-        self.should_render = True
+            self.shift = self.ctrl = self.alt = self.gui = pressed
         return True
 
     # endregion

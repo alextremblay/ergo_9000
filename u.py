@@ -51,7 +51,7 @@ con = tile(6)
 k = kb()
 g = displayio.Group()
 g.append(displayio.Group())
-k.display.display.root_group = g
+k.display.driver.root_group = g
 
 # Loop through each sprite in the sprite sheet
 import time

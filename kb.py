@@ -6,12 +6,13 @@ import time
 from display import Display
 from keymap import get_keymap
 
-from kmk.kmk_keyboard import KMKKeyboard
-from kmk.keys import KC, make_key
+from kmk.kmk_keyboard import KMKKeyboard, debug
+from kmk.keys import KC, Key, make_key
 from kmk.scanners import DiodeOrientation
 from kmk.modules import Module
 from kmk.modules.layers import Layers
 from kmk.modules.split import Split, SplitSide
+from kmk.modules.serialace import SerialACE
 from kmk.extensions import Extension
 from kmk.extensions.media_keys import MediaKeys
 
@@ -161,6 +162,9 @@ class Ergo9000(KMKKeyboard):
     extensions: list[Extension] = [MediaKeys()]
 
     def __init__(self) -> None:
+        if microcontroller.nvm[0] == 1:  # type: ignore
+            # We are in USB write / debug mode
+            self.modules.append(SerialACE())
         self.mac_mode = True
         if split_side == SplitSide.LEFT:
             self.display = Display(self)
@@ -173,33 +177,26 @@ class Ergo9000(KMKKeyboard):
             make_key(names=('PASTE',), on_press=self.handle_paste, on_release=self.handle_paste_release)
 
             self.keymap = get_keymap()
-            for key in [
-                KC.LCTL,
-                KC.RCTL,
-                KC.LALT,
-                KC.RALT,
-                KC.LSFT,
-                KC.RSFT,
-                KC.LGUI,
-                KC.RGUI,
-                KC.MEH,
-                KC.HYPR,
-            ]:
-                key.before_press_handler(
-                    lambda key, keyboard, *_: self.display.handle_mods(
-                        key, keyboard, pressed=True
-                    )
-                )
-                key.after_release_handler(
-                    lambda key, keyboard, *_: self.display.handle_mods(
-                        key, keyboard, pressed=False
-                    )
-                )
+
+    def pre_process_key(self, key: Key, is_pressed: bool, int_coord: int | None = None, index: int = 0) -> None:
+        if key in (KC.LCTL, KC.RCTL):
+            self.display.ctrl = is_pressed
+        if key in (KC.LALT, KC.RALT):
+            self.display.alt = is_pressed
+        if key in (KC.LGUI, KC.RGUI):
+            self.display.gui = is_pressed
+        if key in (KC.LSFT, KC.RSFT):
+            self.display.shift = is_pressed
+        if key == KC.MEH:
+            self.display.ctrl = self.display.shift = self.display.alt = is_pressed
+        if key == KC.HYPR:
+            self.display.ctrl = self.display.shift = self.display.alt = self.display.gui = is_pressed
+        return super().pre_process_key(key, is_pressed, int_coord, index)
 
     def boot_handler(self, key, keyboard: 'Ergo9000', *args):
         layers = keyboard.active_layers
         keyboard.display.msg = "Rebooting..."
-        keyboard.display.render(layers[0])
+        keyboard.display.update(0)
         if 3 in layers:
             # Adjust layer is active, boot to bootloader mode
             print("Booting to BOOTLOADER...")
@@ -211,12 +208,12 @@ class Ergo9000(KMKKeyboard):
             else:
                 print("Booting to NORMAL mode...")
                 microcontroller.nvm[0] = 0  # type: ignore
-        time.sleep(0.5)
+        time.sleep(0.2)
         microcontroller.reset()
 
     def os_switch_handler(self, key, keyboard: 'Ergo9000', *args):
         keyboard.mac_mode = not keyboard.mac_mode
-        keyboard.display.render(keyboard.active_layers[0])
+        keyboard.display.os_mode = keyboard.mac_mode
         return keyboard
 
     def handle_copy(self, key, keyboard: 'Ergo9000', *args):
@@ -279,15 +276,24 @@ class Ergo9000(KMKKeyboard):
             keyboard.keys_pressed.remove(KC.V)
         return keyboard
 
-def go(self, *args, **kwargs) -> None:
-        self._init(*args, **kwargs)
-        try:
-            while True:
-                self._main_loop()
-        except Exception as err:
-            if self.display:
-                self.display.activate_repl_view()
-            raise err
-        finally:
-            self._deinit_hid()
-            self.deinit()
+    def go(self, *args, **kwargs) -> None:
+            self._init(*args, **kwargs)
+            try:
+                while True:
+                    self._main_loop()
+            except Exception as err:
+                if self.display:
+                    self.display.activate_repl_view()
+                import traceback
+
+                traceback.print_exception(err)
+            finally:
+                debug('cleaning up...')
+                self._deinit_hid()
+                self.deinit()
+                debug('...done')
+
+                if not debug.enabled:
+                    import supervisor
+
+                    supervisor.reload()

@@ -1,10 +1,23 @@
 import microcontroller
-import supervisor
-import storage
+import board
+from kmk.bootcfg import bootcfg
+
+storage = False
+cdc_data = False
+cdc_console = False
 
 if microcontroller.nvm[0] == 1: # type: ignore
     print("USB write mode requested")
-    supervisor.runtime.autoreload = False
-    storage.enable_usb_drive()
-else:
-    storage.disable_usb_drive()
+    storage = True
+    cdc_data = True
+    cdc_console = True
+
+bootcfg(
+    sense=board.D9, # first column pin
+    source=board.D0, # first row pin
+    autoreload=False,
+    cdc_console=cdc_console,
+    cdc_data=cdc_data,
+    storage=storage,
+    usb_id=('KMK Keyboards', 'Ergo9000')
+)
