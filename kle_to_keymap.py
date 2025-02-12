@@ -105,7 +105,7 @@ layer_map = {
     'base': 4, # center legend 
     'lower': 6, # bottom-left legend
     'raise': 2, # top-right legend
-    'adjust': 8, # bottom-right legend
+    'adjust': 0, # bottom-right legend
 }
 
 layers = {
@@ -311,8 +311,10 @@ def map_key(lkey, layer, index, extra_info):
             return "COPY"
         case "Paste" | "":
             return "PASTE"
+        case "Undo" | "↶":
+            return "UNDO"
         case _:
-            # as a fallback, and KMK keycode can be specficied directly
+            # as a fallback, any KMK keycode can be specficied directly
             return lkey.upper()
 
 
@@ -330,15 +332,15 @@ for layer in layers:
     for index, key in enumerate(layers[layer]):
         _row_offset = index % row_width
         if _row_offset == 0:
-            layers_s += "            "
+            layers_s += "             "
         if _row_offset == (row_width / 2):
-            layers_s += "            "
+            layers_s += "             "
         if key == "TRNS":
-            layers_s += "___,      "
+            layers_s += "___,       "
         elif key in ["WSP_NXT", "WSP_PRV", "DSP_NXT", "DSP_PRV", "MSN_CTL"]:
-            layers_s += "{:10}".format(f"{key}, ")
+            layers_s += "{:11}".format(f"{key}, ")
         else:
-            layers_s += "{:10}".format(f"KC.{key}, ")
+            layers_s += "{:11}".format(f"KC.{key}, ")
         if _row_offset == row_width-1:
             layers_s += "\n"
     layers_s += "        ],\n"
@@ -349,9 +351,9 @@ def get_keymap():
     ___ = KC.TRNS
     WSP_NXT = KC.HYPR(KC.RIGHT)
     WSP_PRV = KC.HYPR(KC.LEFT)
+    MSN_CTL = KC.HYPR(KC.UP)
     DSP_NXT = KC.MEH(KC.RIGHT)
     DSP_PRV = KC.MEH(KC.LEFT)
-    MSN_CTL = KC.HYPR(KC.UP)
     return [
         # fmt: off
         {layers_s}
